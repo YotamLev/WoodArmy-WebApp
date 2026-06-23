@@ -22,7 +22,7 @@ def load_content() -> dict:
         with CONTENT_FILE.open(encoding="utf-8") as f:
             return json.load(f)
     return {
-        "title": "ריקשה — יומן המשלחת",
+        "title": "יומן הכתרון",
         "subtitle": "",
         "tagline": "☙ חברת הרייקשה ☙",
         "currency_name": "גילדרים",
@@ -432,7 +432,7 @@ def render_shop(content: dict, items: list[dict], inventory: dict) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="ריקשה — יומן המשלחת", page_icon="🌲", layout="wide")
+    st.set_page_config(page_title="יומן הכתרון", page_icon="🌲", layout="wide")
     apply_theme()
     init_session_state()
 

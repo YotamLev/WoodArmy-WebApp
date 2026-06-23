@@ -270,7 +270,7 @@ def apply_theme() -> None:
 
 
 def render_banner(content: dict) -> None:
-    title = content.get("title", "ריקשה — יומן המשלחת")
+    title = content.get("title", "יומן הכתרון")
     subtitle = content.get("subtitle", "")
     tagline = content.get("tagline", "☙ חברת הרייקשה ☙")
 
