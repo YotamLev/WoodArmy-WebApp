@@ -1,11 +1,11 @@
+import json
+
 import streamlit as st
+import streamlit.components.v1 as components
 
 THEME_CSS = """
-<link
-  href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Frank+Ruhl+Libre:wght@300;400;600&display=swap"
-  rel="stylesheet"
->
-<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Frank+Ruhl+Libre:wght@300;400;600&display=swap');
+
 :root {
   --wa-forest-deep: #0f1a14;
   --wa-forest-mid: #1a2b22;
@@ -53,7 +53,9 @@ THEME_CSS = """
   max-width: 1100px;
 }
 
-h1, h2, h3, h4, [data-testid="stMarkdownContainer"] h1, [data-testid="stMarkdownContainer"] h2 {
+h1, h2, h3, h4,
+[data-testid="stMarkdownContainer"] h1,
+[data-testid="stMarkdownContainer"] h2 {
   font-family: "Cinzel", "Frank Ruhl Libre", serif !important;
   color: var(--wa-parchment) !important;
   letter-spacing: 0.04em;
@@ -69,8 +71,12 @@ h1 {
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.35);
 }
 
-[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
-[data-testid="stSidebar"] label, [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span {
   color: var(--wa-parchment) !important;
 }
 
@@ -120,7 +126,8 @@ h1 {
   box-shadow: 0 -2px 12px rgba(201, 162, 39, 0.12);
 }
 
-[data-testid="stDataFrame"], [data-testid="stDataEditor"] {
+[data-testid="stDataFrame"],
+[data-testid="stDataEditor"] {
   border: 1px solid rgba(201, 162, 39, 0.28);
   border-radius: 6px;
   overflow: hidden;
@@ -157,7 +164,10 @@ div[data-testid="stAlert"] {
   font-weight: 700;
 }
 
-.stTextInput input, .stNumberInput input, .stTextArea textarea, .stSelectbox > div > div {
+.stTextInput input,
+.stNumberInput input,
+.stTextArea textarea,
+.stSelectbox > div > div {
   background-color: rgba(15, 26, 20, 0.85) !important;
   color: var(--wa-parchment) !important;
   border-color: rgba(201, 162, 39, 0.25) !important;
@@ -237,12 +247,26 @@ div[data-testid="stAlert"] {
   color: var(--wa-moss);
   margin-bottom: 0.25rem;
 }
-</style>
 """
 
 
 def apply_theme() -> None:
-    st.markdown(THEME_CSS, unsafe_allow_html=True)
+    css = json.dumps(THEME_CSS)
+    components.html(
+        f"""
+        <script>
+        (function () {{
+            const doc = window.parent.document;
+            if (doc.getElementById("wa-theme-style")) return;
+            const style = doc.createElement("style");
+            style.id = "wa-theme-style";
+            style.textContent = {css};
+            doc.head.appendChild(style);
+        }})();
+        </script>
+        """,
+        height=0,
+    )
 
 
 def render_banner(content: dict) -> None:
@@ -252,12 +276,12 @@ def render_banner(content: dict) -> None:
 
     st.markdown(
         f"""
-        <div class="wa-banner">
-          <div class="wa-banner-eyebrow">{tagline}</div>
-          <div class="wa-banner-title">{title}</div>
-          <div class="wa-banner-subtitle">{subtitle}</div>
-          <div class="wa-banner-rule"></div>
-        </div>
+<div class="wa-banner">
+  <div class="wa-banner-eyebrow">{tagline}</div>
+  <div class="wa-banner-title">{title}</div>
+  <div class="wa-banner-subtitle">{subtitle}</div>
+  <div class="wa-banner-rule"></div>
+</div>
         """,
         unsafe_allow_html=True,
     )
