@@ -8,9 +8,11 @@ import streamlit as st
 
 DATA_DIR = Path(__file__).parent / "data"
 CONTENT_FILE = DATA_DIR / "content.json"
+INVENTORY_FILE = DATA_DIR / "inventory.json"
 PRICE_LIST_FILE = DATA_DIR / "price_list.csv"
 
 CSV_COLUMNS = ("מגזר", "מוצר", "מחיר", "משקל")
+EQUIPMENT_COLUMNS = ("פריט", "כמות", "משקל", "הערות")
 
 
 def load_content() -> dict:
@@ -18,9 +20,9 @@ def load_content() -> dict:
         with CONTENT_FILE.open(encoding="utf-8") as f:
             return json.load(f)
     return {
-        "title": "ריקשה — מחירון",
+        "title": "ריקשה — מלאי",
         "subtitle": "",
-        "currency_name": "מטבע",
+        "currency_name": "גילדרים",
         "last_updated": None,
     }
 
@@ -30,6 +32,21 @@ def save_content(content: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with CONTENT_FILE.open("w", encoding="utf-8") as f:
         json.dump(content, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
+def load_inventory() -> dict:
+    if INVENTORY_FILE.exists():
+        with INVENTORY_FILE.open(encoding="utf-8") as f:
+            return json.load(f)
+    return {"money": 0, "equipment": []}
+
+
+def save_inventory(inventory: dict) -> None:
+    inventory["last_updated"] = datetime.now(timezone.utc).isoformat()
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with INVENTORY_FILE.open("w", encoding="utf-8") as f:
+        json.dump(inventory, f, indent=2, ensure_ascii=False)
         f.write("\n")
 
 
@@ -116,8 +133,122 @@ def logout() -> None:
 def init_session_state() -> None:
     if "cart" not in st.session_state:
         st.session_state.cart = {}
-    if "currency_amount" not in st.session_state:
-        st.session_state.currency_amount = 0.0
+
+
+def equipment_total_weight(equipment: list[dict]) -> float:
+    total = 0.0
+    for row in equipment:
+        qty = float(row.get("כמות") or 0)
+        weight = float(row.get("משקל") or 0)
+        total += qty * weight
+    return total
+
+
+def render_sidebar() -> None:
+    with st.sidebar:
+        st.header("גישה")
+        if is_admin():
+            st.success("מחובר כמנהל")
+            if st.button("התנתק"):
+                logout()
+                st.rerun()
+        else:
+            st.caption("צופים רואים את המלאי. מנהלים יכולים לערוך.")
+            password = st.text_input("סיסמת מנהל", type="password")
+            if st.button("כניסה"):
+                if try_login(password):
+                    st.rerun()
+                else:
+                    st.error("סיסמה שגויה.")
+
+
+def render_inventory(content: dict, inventory: dict) -> None:
+    currency_name = content.get("currency_name", "גילדרים")
+    equipment = inventory.get("equipment", [])
+    money = float(inventory.get("money", 0))
+    total_weight = equipment_total_weight(equipment)
+
+    if is_admin():
+        st.info("מצב עריכה — עדכנו יתרה וציוד ולחצו שמור.")
+
+        money = st.number_input(
+            f"יתרת {currency_name}",
+            min_value=0.0,
+            value=money,
+            step=1.0,
+        )
+
+        edited_equipment = st.data_editor(
+            equipment,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "פריט": st.column_config.TextColumn("פריט", required=True),
+                "כמות": st.column_config.NumberColumn("כמות", min_value=0, step=1, default=1),
+                "משקל": st.column_config.NumberColumn("משקל (ליחידה)", min_value=0.0, step=0.1),
+                "הערות": st.column_config.TextColumn("הערות"),
+            },
+        )
+
+        col_save, col_settings = st.columns(2)
+        with col_save:
+            if st.button("שמור מלאי", type="primary"):
+                cleaned = []
+                for row in edited_equipment:
+                    name = str(row.get("פריט", "")).strip()
+                    if not name:
+                        continue
+                    cleaned.append(
+                        {
+                            "פריט": name,
+                            "כמות": int(row.get("כמות") or 0),
+                            "משקל": float(row.get("משקל") or 0),
+                            "הערות": str(row.get("הערות", "")).strip(),
+                        }
+                    )
+                save_inventory({"money": money, "equipment": cleaned})
+                st.success("המלאי נשמר.")
+                st.rerun()
+
+        with col_settings:
+            with st.expander("הגדרות עמוד"):
+                content["title"] = st.text_input("כותרת", value=content.get("title", ""))
+                content["subtitle"] = st.text_area("תת-כותרת", value=content.get("subtitle", ""))
+                content["currency_name"] = st.text_input(
+                    "שם המטבע",
+                    value=content.get("currency_name", "גילדרים"),
+                )
+                if st.button("שמור הגדרות"):
+                    save_content(content)
+                    st.success("ההגדרות נשמרו.")
+                    st.rerun()
+
+        return
+
+    col_money, col_weight, col_items = st.columns(3)
+    with col_money:
+        st.metric(f"יתרת {currency_name}", f"{money:.0f}")
+    with col_weight:
+        st.metric("משקל כולל", f"{total_weight:.1f}")
+    with col_items:
+        st.metric("סוגי פריטים", len(equipment))
+
+    if not equipment:
+        st.info("אין ציוד רשום עדיין.")
+        return
+
+    st.subheader("ציוד נוכחי")
+    st.dataframe(
+        equipment,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "פריט": st.column_config.TextColumn("פריט"),
+            "כמות": st.column_config.NumberColumn("כמות"),
+            "משקל": st.column_config.NumberColumn("משקל (ליחידה)"),
+            "הערות": st.column_config.TextColumn("הערות"),
+        },
+    )
 
 
 def cart_total(items: list[dict]) -> tuple[float, float, list[dict]]:
@@ -150,74 +281,107 @@ def cart_total(items: list[dict]) -> tuple[float, float, list[dict]]:
     return total_price, total_weight, lines
 
 
-def render_sidebar(content: dict, items: list[dict]) -> None:
-    currency_name = content.get("currency_name", "מטבע")
+def render_price_list_admin(all_items: list[dict]) -> None:
+    st.info("מצב עריכה — שינויים נשמרים לקובץ המחירון.")
 
-    with st.sidebar:
-        st.header("גישה")
-        if is_admin():
-            st.success("מחובר כמנהל")
-            if st.button("התנתק"):
-                logout()
-                st.rerun()
-        else:
-            st.caption("צופים רואים את המחירון. מנהלים יכולים לערוך מחירים.")
-            password = st.text_input("סיסמת מנהל", type="password")
-            if st.button("כניסה"):
-                if try_login(password):
-                    st.rerun()
-                else:
-                    st.error("סיסמה שגויה.")
+    editor_rows = [
+        {
+            "מגזר": item["מגזר"],
+            "מוצר": item["מוצר"],
+            "מחיר": item["מחיר"],
+            "משקל": item["משקל"],
+        }
+        for item in all_items
+    ]
 
+    edited = st.data_editor(
+        editor_rows,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "מגזר": st.column_config.TextColumn("מגזר", required=True),
+            "מוצר": st.column_config.TextColumn("מוצר", required=True),
+            "מחיר": st.column_config.TextColumn("מחיר"),
+            "משקל": st.column_config.NumberColumn("משקל", min_value=0.0, step=0.1),
+        },
+    )
+
+    if st.button("שמור מחירון", type="primary"):
+        cleaned = []
+        for row in edited:
+            if not str(row.get("מוצר", "")).strip():
+                continue
+            price_raw = str(row.get("מחיר", "")).strip()
+            cleaned.append(
+                {
+                    "מגזר": str(row.get("מגזר", "")).strip(),
+                    "מוצר": str(row.get("מוצר", "")).strip(),
+                    "מחיר": price_raw,
+                    "מחיר_מספרי": parse_price(price_raw),
+                    "משקל": float(row.get("משקל") or 0),
+                }
+            )
+        save_price_list(cleaned)
+        st.success("המחירון נשמר.")
+        st.rerun()
+
+
+def render_shop(content: dict, items: list[dict], inventory: dict) -> None:
+    currency_name = content.get("currency_name", "גילדרים")
+
+    if is_admin():
+        render_price_list_admin(items)
         st.divider()
-        st.header("המרת מטבע")
-        st.session_state.currency_amount = st.number_input(
-            f"יתרת {currency_name}",
-            min_value=0.0,
-            value=float(st.session_state.currency_amount),
-            step=1.0,
-        )
 
-        total_price, total_weight, lines = cart_total(items)
-        remaining = st.session_state.currency_amount - total_price
+    if not items:
+        st.warning("לא נמצא קובץ מחירון.")
+        return
 
+    st.caption("בחרו פריטים לרכישה — הסכום מחושב מול יתרת המלאי.")
+
+    available = float(inventory.get("money", 0))
+    col_balance, col_cart, col_remaining = st.columns(3)
+
+    total_price, total_weight, lines = cart_total(items)
+    remaining = available - total_price
+
+    with col_balance:
+        st.metric(f"יתרה במלאי ({currency_name})", f"{available:.0f}")
+    with col_cart:
         st.metric("סה״כ בעגלה", f"{total_price:.2f}")
-        st.metric("נשאר", f"{remaining:.2f}", delta=None if remaining >= 0 else f"{remaining:.2f}")
+    with col_remaining:
+        st.metric("נשאר אחרי רכישה", f"{remaining:.2f}")
 
-        if total_weight > 0:
-            st.caption(f"משקל כולל: {total_weight:.1f}")
+    if total_weight > 0:
+        st.caption(f"משקל בעגלה: {total_weight:.1f}")
 
-        if lines:
-            st.subheader("פריטים שנבחרו")
+    if lines:
+        with st.expander("פריטים שנבחרו", expanded=True):
             for line in lines:
                 st.write(f"**{line['מוצר']}** × {line['כמות']} = {line['סה״כ']:.2f}")
-
         if st.button("נקה עגלה"):
             st.session_state.cart = {}
             st.rerun()
-
         if total_price > 0:
             if remaining < 0:
                 st.error("אין מספיק מטבע לרכישה.")
             else:
                 st.success("ניתן לרכוש את כל הפריטים בעגלה.")
 
-
-def render_price_list(items: list[dict], editable: bool) -> None:
     categories = sorted({item["מגזר"] for item in items if item["מגזר"]})
-    selected_category = st.selectbox("סינון לפי מגזר", ["הכל"] + categories)
-    search = st.text_input("חיפוש מוצר")
+    selected_category = st.selectbox("סינון לפי מגזר", ["הכל"] + categories, key="shop_category")
+    search = st.text_input("חיפוש מוצר", key="shop_search")
 
     filtered = items
     if selected_category != "הכל":
         filtered = [item for item in filtered if item["מגזר"] == selected_category]
     if search.strip():
         query = search.strip().lower()
-        filtered = [item for item in filtered if query in item["מוצר"].lower() or query in item["מגזר"].lower()]
-
-    if editable:
-        render_admin_editor(filtered, items)
-        return
+        filtered = [
+            item
+            for item in filtered
+            if query in item["מוצר"].lower() or query in item["מגזר"].lower()
+        ]
 
     if not filtered:
         st.info("לא נמצאו פריטים.")
@@ -263,101 +427,31 @@ def render_price_list(items: list[dict], editable: bool) -> None:
                             st.session_state.cart[key] = qty
 
 
-def render_admin_editor(filtered: list[dict], all_items: list[dict]) -> None:
-    st.info("מצב עריכה — שינויים נשמרים לקובץ המחירון.")
-
-    editor_rows = [
-        {
-            "מגזר": item["מגזר"],
-            "מוצר": item["מוצר"],
-            "מחיר": item["מחיר"],
-            "משקל": item["משקל"],
-        }
-        for item in all_items
-    ]
-
-    edited = st.data_editor(
-        editor_rows,
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "מגזר": st.column_config.TextColumn("מגזר", required=True),
-            "מוצר": st.column_config.TextColumn("מוצר", required=True),
-            "מחיר": st.column_config.TextColumn("מחיר"),
-            "משקל": st.column_config.NumberColumn("משקל", min_value=0.0, step=0.1),
-        },
-    )
-
-    col_save, col_add = st.columns(2)
-    with col_save:
-        if st.button("שמור מחירון", type="primary"):
-            cleaned = []
-            for row in edited:
-                if not str(row.get("מוצר", "")).strip():
-                    continue
-                price_raw = str(row.get("מחיר", "")).strip()
-                cleaned.append(
-                    {
-                        "מגזר": str(row.get("מגזר", "")).strip(),
-                        "מוצר": str(row.get("מוצר", "")).strip(),
-                        "מחיר": price_raw,
-                        "מחיר_מספרי": parse_price(price_raw),
-                        "משקל": float(row.get("משקל") or 0),
-                    }
-                )
-            save_price_list(cleaned)
-            st.success("המחירון נשמר.")
-            st.rerun()
-
-    with col_add:
-        if st.button("הוסף שורה ריקה"):
-            all_items.append(
-                {
-                    "מגזר": filtered[0]["מגזר"] if filtered else "כללי",
-                    "מוצר": "מוצר חדש",
-                    "מחיר": "0",
-                    "מחיר_מספרי": 0.0,
-                    "משקל": 0.0,
-                }
-            )
-            save_price_list(all_items)
-            st.rerun()
-
-    st.divider()
-    st.subheader("הגדרות עמוד")
-    content = load_content()
-    content["title"] = st.text_input("כותרת", value=content.get("title", ""))
-    content["subtitle"] = st.text_area("תת-כותרת", value=content.get("subtitle", ""))
-    content["currency_name"] = st.text_input(
-        "שם המטבע",
-        value=content.get("currency_name", "מטבע"),
-    )
-    if st.button("שמור הגדרות"):
-        save_content(content)
-        st.success("ההגדרות נשמרו.")
-
-
 def main() -> None:
-    st.set_page_config(page_title="ריקשה — מחירון", page_icon="🪵", layout="wide")
+    st.set_page_config(page_title="ריקשה — מלאי", page_icon="🪵", layout="wide")
     init_session_state()
 
     content = load_content()
+    inventory = load_inventory()
     items = load_price_list()
 
-    render_sidebar(content, items)
+    render_sidebar()
 
-    st.title(content.get("title", "ריקשה — מחירון"))
+    st.title(content.get("title", "ריקשה — מלאי"))
     if content.get("subtitle"):
         st.markdown(content["subtitle"])
 
-    if not items:
-        st.warning("לא נמצא קובץ מחירון. הוסיפו את `data/price_list.csv`.")
-        return
+    tab_inventory, tab_shop = st.tabs(["מלאי", "מחירון"])
 
-    render_price_list(items, editable=is_admin())
+    with tab_inventory:
+        render_inventory(content, inventory)
 
-    if content.get("last_updated"):
-        st.caption(f"עודכן לאחרונה: {content['last_updated']}")
+    with tab_shop:
+        render_shop(content, items, inventory)
+
+    updated = inventory.get("last_updated") or content.get("last_updated")
+    if updated:
+        st.caption(f"עודכן לאחרונה: {updated}")
 
 
 if __name__ == "__main__":
