@@ -6,6 +6,8 @@ from pathlib import Path
 
 import streamlit as st
 
+from theme import apply_theme, render_banner, render_footer
+
 DATA_DIR = Path(__file__).parent / "data"
 CONTENT_FILE = DATA_DIR / "content.json"
 INVENTORY_FILE = DATA_DIR / "inventory.json"
@@ -20,8 +22,9 @@ def load_content() -> dict:
         with CONTENT_FILE.open(encoding="utf-8") as f:
             return json.load(f)
     return {
-        "title": "ריקשה — מלאי",
+        "title": "ריקשה — יומן המשלחת",
         "subtitle": "",
+        "tagline": "☙ חברת הרייקשה ☙",
         "currency_name": "גילדרים",
         "last_updated": None,
     }
@@ -146,16 +149,16 @@ def equipment_total_weight(equipment: list[dict]) -> float:
 
 def render_sidebar() -> None:
     with st.sidebar:
-        st.header("גישה")
+        st.markdown("### מפתח היומן")
         if is_admin():
-            st.success("מחובר כמנהל")
-            if st.button("התנתק"):
+            st.success("הרשאת עריכה פעילה")
+            if st.button("נעילת היומן"):
                 logout()
                 st.rerun()
         else:
-            st.caption("צופים רואים את המלאי. מנהלים יכולים לערוך.")
-            password = st.text_input("סיסמת מנהל", type="password")
-            if st.button("כניסה"):
+            st.caption("המשלחת קוראת. רק בעלי המפתח יכולים לערוך.")
+            password = st.text_input("מפתח המשלחת", type="password")
+            if st.button("פתיחת היומן"):
                 if try_login(password):
                     st.rerun()
                 else:
@@ -169,7 +172,7 @@ def render_inventory(content: dict, inventory: dict) -> None:
     total_weight = equipment_total_weight(equipment)
 
     if is_admin():
-        st.info("מצב עריכה — עדכנו יתרה וציוד ולחצו שמור.")
+        st.info("מצב עריכה — עדכנו גילדרים וציוד, ואז שמרו ביומן.")
 
         money = st.number_input(
             f"יתרת {currency_name}",
@@ -192,7 +195,7 @@ def render_inventory(content: dict, inventory: dict) -> None:
 
         col_save, col_settings = st.columns(2)
         with col_save:
-            if st.button("שמור מלאי", type="primary"):
+            if st.button("רישום ביומן", type="primary"):
                 cleaned = []
                 for row in edited_equipment:
                     name = str(row.get("פריט", "")).strip()
@@ -234,10 +237,11 @@ def render_inventory(content: dict, inventory: dict) -> None:
         st.metric("סוגי פריטים", len(equipment))
 
     if not equipment:
-        st.info("אין ציוד רשום עדיין.")
+        st.info("התרמילים ריקים — עדיין לא נרשם ציוד.")
         return
 
-    st.subheader("ציוד נוכחי")
+    st.markdown('<div class="wa-section-label">ציוד נוכחי</div>', unsafe_allow_html=True)
+    st.subheader("מטען המשלחת")
     st.dataframe(
         equipment,
         use_container_width=True,
@@ -337,7 +341,7 @@ def render_shop(content: dict, items: list[dict], inventory: dict) -> None:
         st.warning("לא נמצא קובץ מחירון.")
         return
 
-    st.caption("בחרו פריטים לרכישה — הסכום מחושב מול יתרת המלאי.")
+    st.caption("סחורה מהשוק — הסכום מחושב מול גילדרי המשלחת.")
 
     available = float(inventory.get("money", 0))
     col_balance, col_cart, col_remaining = st.columns(3)
@@ -428,7 +432,8 @@ def render_shop(content: dict, items: list[dict], inventory: dict) -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="ריקשה — מלאי", page_icon="🪵", layout="wide")
+    st.set_page_config(page_title="ריקשה — יומן המשלחת", page_icon="🌲", layout="wide")
+    apply_theme()
     init_session_state()
 
     content = load_content()
@@ -436,12 +441,9 @@ def main() -> None:
     items = load_price_list()
 
     render_sidebar()
+    render_banner(content)
 
-    st.title(content.get("title", "ריקשה — מלאי"))
-    if content.get("subtitle"):
-        st.markdown(content["subtitle"])
-
-    tab_inventory, tab_shop = st.tabs(["מלאי", "מחירון"])
+    tab_inventory, tab_shop = st.tabs(["מלאי המשלחת", "מחירון הסחורה"])
 
     with tab_inventory:
         render_inventory(content, inventory)
@@ -451,7 +453,9 @@ def main() -> None:
 
     updated = inventory.get("last_updated") or content.get("last_updated")
     if updated:
-        st.caption(f"עודכן לאחרונה: {updated}")
+        st.caption(f"נרשם לאחרונה ביומן: {updated}")
+
+    render_footer()
 
 
 if __name__ == "__main__":
